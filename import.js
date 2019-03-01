@@ -318,7 +318,7 @@ const toMerge = [];
 
 for (let i = 2; i < process.argv.length; i++) {
 	const importPath = process.argv[i];
-	toMerge.push([path.basename(importPath, '.opus'), importPath]);
+	toMerge.push([path.basename(importPath, '.mp3'), importPath]);
 }
 
 mergeIndexSync(keySet, index, toMerge);

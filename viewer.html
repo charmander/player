@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 
 <title>music</title>
 
@@ -77,7 +78,7 @@ const getDecrypted = async (keySet, combinedBytes) => {
 	const encodedBytes = await crypto.subtle.decrypt({
 		name: 'AES-CTR',
 		counter: iv,
-		length: 32,
+		length: 128,  // iOS doesn’t support 32
 	}, keySet.encryptionKey, encrypted);
 
 	const length = new DataView(encodedBytes).getUint32(0, true);
@@ -182,7 +183,7 @@ const getFile = async (keySet, id) => {
 
 				let player = ui.appendChild(document.createElement('audio'));
 				player.controls = true;
-				player.type = 'audio/ogg;codecs=opus';
+				player.type = 'audio/mp3';
 
 				const trackList = ui.appendChild(document.createElement('ul'));
 				trackList.id = 'track-list';
@@ -201,7 +202,7 @@ const getFile = async (keySet, id) => {
 
 						const newPlayer = document.createElement('audio');
 						newPlayer.controls = true;
-						newPlayer.type = 'audio/ogg;codecs=opus';
+						newPlayer.type = 'audio/mp3';
 						player.replaceWith(newPlayer);
 						player = newPlayer;
 
@@ -216,7 +217,7 @@ const getFile = async (keySet, id) => {
 									return;
 								}
 
-								const fileBlob = new Blob([fileBuffer], {type: 'audio/ogg;codecs=opus'});
+								const fileBlob = new Blob([fileBuffer], {type: 'audio/mp3'});
 								const fileUrl = URL.createObjectURL(fileBlob);
 								player.src = fileUrl;
 								player.play();

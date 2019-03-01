@@ -74,7 +74,7 @@ const sendText = (res, text) => {
 };
 
 const respond = (req, res) => {
-	res.setHeader('Content-Security-Policy', "frame-ancestors 'none'; default-src 'none'; form-action 'none'; script-src 'unsafe-inline'; connect-src 'self'; media-src blob:");
+	res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
 	res.setHeader('Strict-Transport-Security', 'max-age=31536000');
 
 	if (req.headers.host !== expectedHost) {
