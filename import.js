@@ -7,8 +7,8 @@ const path = require('path');
 const {inspect} = require('util');
 
 const TOKEN_ENCODE_START = 'a'.charCodeAt(0);
-const KEY_ALPHABET = 'abcdefghijkmnopqrstuwxyz13456789';  // like z-base-32
-const KEY_LENGTH = 24;  // 120 bits
+const KEY_ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
+const KEY_LENGTH = 24;  // 112 bits
 const ROUND_TO_NEAREST = 256 * 1024;  // 256 KiB
 const ID_BYTES = 8;
 const SORT_LOCALE = 'en';
@@ -42,14 +42,32 @@ const tokenEncode = bytes => {
 };
 
 const generateKey = () => {
-	const bytes = crypto.randomBytes(KEY_LENGTH);
-	let result = '';
+	const ALPHABET_SIZE = BigInt(KEY_ALPHABET.length);
+	const limit = ALPHABET_SIZE ** BigInt(KEY_LENGTH);
+	const bitCount = Math.ceil(Math.log2(KEY_ALPHABET.length) * KEY_LENGTH);
+	const byteCount = Math.ceil(bitCount / 8);
+	const mask = 0xff >>> (8 - bitCount % 8) % 8;
 
-	for (let i = 0; i < bytes.length; i++) {
-		result += KEY_ALPHABET.charAt(bytes[i] & 31);
+	for (;;) {
+		const bytes = crypto.randomBytes(byteCount);
+		bytes[0] &= mask;
+
+		let value = 0n;
+
+		for (const byte of bytes) {
+			value = 256n * value + BigInt(byte);
+		}
+
+		if (value < limit) {
+			let result = '';
+
+			for (let i = 0; i < KEY_LENGTH; i++) {
+				result += KEY_ALPHABET.charAt(Number(value / ALPHABET_SIZE ** BigInt(i) % ALPHABET_SIZE));
+			}
+
+			return result;
+		}
 	}
-
-	return result;
 };
 
 const EMPTY = new Uint8Array();

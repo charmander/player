@@ -7,7 +7,7 @@
 <form id="key-form" action="javascript:">
 	<label>
 		Encryption key
-		<input id="key-input" type="password" value="" placeholder="fzirp1ces8gj4pto1efxb3cg" maxlength="24" pattern="[0-9A-Za-z]{24}" required title="exactly 24 letters and digits" autocomplete="current-password" />
+		<input id="key-input" type="password" value="" placeholder="iwhdrqvgbrjrqpgbccschpie" maxlength="24" pattern="[A-Za-z]{24}" required title="exactly 24 letters" autocomplete="current-password" />
 	</label>
 
 	<button id="key-submit" disabled>Load</button>
@@ -174,11 +174,7 @@ const getFile = async (keySet, id) => {
 
 		keyInput.disabled = keySubmit.disabled = true;
 
-		const keyText = keyInput.value
-			.toLowerCase()
-			.replace(/l/g, '1')
-			.replace(/v/g, 'u')  // “invalid key” to be expected
-			.replace(/2/g, 'z');
+		const keyText = keyInput.value.toLowerCase();
 
 		load(keyText).then(
 			({keySet, index}) => {
