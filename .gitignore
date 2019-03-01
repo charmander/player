@@ -1,0 +1,10 @@
+/secret-key
+
+/storage/*
+!/storage/.gitkeep
+
+/temp/*
+!/temp/.gitkeep
+
+/cert.crt
+/cert.key

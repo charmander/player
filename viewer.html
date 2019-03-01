@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+
+<meta charset="utf-8" />
+
+<title>music</title>
+
+<form id="key-form" action="javascript:">
+	<label>
+		Encryption key
+		<input id="key-input" type="password" value="" placeholder="fzirp1ces8gj4pto1efxb3cg" maxlength="24" pattern="[0-9A-Za-z]{24}" required title="exactly 24 letters and digits" autocomplete="current-password" />
+	</label>
+
+	<button id="key-submit" disabled>Load</button>
+</form>
+
+<script>
+'use strict';
+
+const TOKEN_ENCODE_START = 'a'.charCodeAt(0);
+const ID_LENGTH = 8;
+
+const tokenEncode = bytes => {
+	let result = '';
+
+	for (const byte of bytes) {
+		result += String.fromCharCode(
+			(byte >>> 4) + TOKEN_ENCODE_START,
+			(byte & 0xf) + TOKEN_ENCODE_START
+		);
+	}
+
+	return result;
+};
+
+class DerivableKey {
+	constructor(idHex) {
+		const id = new Uint8Array(16);
+
+		for (let i = 0; i < 16; i++) {
+			id[i] = parseInt(idHex.substr(2 * i, 2), 16);
+		}
+
+		this._id = id;
+	}
+
+	derive(key) {
+		return crypto.subtle.encrypt({
+			name: 'AES-CTR',
+			counter: this._id,
+			length: 1,
+		}, key, new Uint8Array(16));
+	}
+}
+
+const ENCRYPTION_KEY = new DerivableKey('ed29594ac9e17e910c344f7a12f8979a');
+const HMAC_KEY       = new DerivableKey('5c2cbd044fbad7e79d61a91bb5a47108');
+const ID_KEY         = new DerivableKey('8eb0866b9d601c0c335a47ca6019a183');
+const INDEX_SECRET   = new DerivableKey('d19e547ec98c7d9ed9a80e8da01824e8');
+
+const getDecrypted = async (keySet, combinedBytes) => {
+	if (!(combinedBytes instanceof ArrayBuffer && combinedBytes.byteLength >= 16)) {
+		throw new Error('Unexpected');
+	}
+
+	const mac = combinedBytes.slice(0, 48);
+	const macMessage = combinedBytes.slice(48);
+
+	const isMacValid = await crypto.subtle.verify('HMAC', keySet.hmacKey, mac, macMessage);
+
+	if (isMacValid !== true) {
+		throw new Error('Invalid MAC');
+	}
+
+	const iv = macMessage.slice(0, 16);
+	const encrypted = macMessage.slice(16);
+
+	const encodedBytes = await crypto.subtle.decrypt({
+		name: 'AES-CTR',
+		counter: iv,
+		length: 32,
+	}, keySet.encryptionKey, encrypted);
+
+	const length = new DataView(encodedBytes).getUint32(0, true);
+
+	if (length > encodedBytes.length - 4) {
+		throw new Error('Invalid length');
+	}
+
+	return encodedBytes.slice(4, 4 + length);
+};
+
+const load = async keyText => {
+	const keyTextAscii = new Uint8Array(keyText.length);
+
+	for (let i = 0; i < keyText.length; i++) {
+		keyTextAscii[i] = keyText.charCodeAt(i);
+	}
+
+	const keyBytes = (await crypto.subtle.digest('SHA-256', keyTextAscii)).slice(0, 16);
+
+	const keyAES = await crypto.subtle.importKey('raw', keyBytes, 'AES-CTR', false, ['encrypt']);
+
+	const keySet = {
+		encryptionKey: await crypto.subtle.importKey('raw', await ENCRYPTION_KEY.derive(keyAES), 'AES-CTR', false, ['decrypt']),
+		hmacKey: await crypto.subtle.importKey('raw', await HMAC_KEY.derive(keyAES), {name: 'HMAC', hash: 'SHA-384'}, false, ['verify']),
+		idKey: await crypto.subtle.importKey('raw', await ID_KEY.derive(keyAES), {name: 'HMAC', hash: 'SHA-512'}, false, ['sign']),
+		indexSecret: new Uint8Array(await INDEX_SECRET.derive(keyAES)),
+	};
+
+	const encryptedIndex =
+		await fetch('/storage/index', {
+			headers: {
+				'Authorization': 'index-secret ' + tokenEncode(keySet.indexSecret),
+			},
+			cache: 'no-cache',
+		}).then(response =>
+			response.ok ?
+				response.arrayBuffer() :
+				response.text().then(text => Promise.reject(new Error(text)))
+		);
+
+	const indexBuffer = await getDecrypted(keySet, encryptedIndex);
+	const indexBytes = new Uint8Array(indexBuffer);
+	const index = new Map();
+	const utf8Decoder = new TextDecoder('utf-8', {fatal: true});
+
+	let offset = 0;
+
+	while (offset < indexBuffer.byteLength) {
+		const nameLength = indexBytes[offset];
+		offset++;
+
+		if (offset + nameLength + ID_LENGTH > indexBuffer.byteLength) {
+			throw new Error('Invalid length');
+		}
+
+		const name = utf8Decoder.decode(indexBuffer.slice(offset, offset + nameLength), {stream: false});
+		offset += nameLength;
+
+		const id = indexBuffer.slice(offset, offset + ID_LENGTH);
+		offset += ID_LENGTH;
+
+		index.set(name, id);
+	}
+
+	return {
+		keySet,
+		index,
+	};
+};
+
+const getFile = async (keySet, id) => {
+	const encryptedFile =
+		await fetch('/storage/' + tokenEncode(new Uint8Array(id)), {
+			headers: {
+				'Authorization': 'index-secret ' + tokenEncode(keySet.indexSecret),
+			},
+		}).then(response =>
+			response.ok ?
+				response.arrayBuffer() :
+				response.text().then(text => Promise.reject(new Error(text)))
+		);
+
+	return getDecrypted(keySet, encryptedFile);
+};
+
+{
+	const keyForm = document.getElementById('key-form');
+	const keyInput = document.getElementById('key-input');
+	const keySubmit = document.getElementById('key-submit');
+
+	keyForm.addEventListener('submit', e => {
+		e.preventDefault();
+
+		keyInput.disabled = keySubmit.disabled = true;
+
+		const keyText = keyInput.value
+			.toLowerCase()
+			.replace(/l/g, '1')
+			.replace(/v/g, 'u')  // “invalid key” to be expected
+			.replace(/2/g, 'z');
+
+		load(keyText).then(
+			({keySet, index}) => {
+				const ui = document.createDocumentFragment();
+
+				let player = ui.appendChild(document.createElement('audio'));
+				player.controls = true;
+				player.type = 'audio/ogg;codecs=opus';
+
+				const trackList = ui.appendChild(document.createElement('ul'));
+				trackList.id = 'track-list';
+
+				for (const [name, id] of index) {
+					const trackItem = trackList.appendChild(document.createElement('li'));
+					const trackLink = trackItem.appendChild(document.createElement('a'));
+					trackLink.href = 'javascript:';
+					trackLink.textContent = name;
+
+					trackLink.addEventListener('click', e => {
+						e.preventDefault();
+
+						player.pause();
+						const oldUrl = player.src;
+
+						const newPlayer = document.createElement('audio');
+						newPlayer.controls = true;
+						newPlayer.type = 'audio/ogg;codecs=opus';
+						player.replaceWith(newPlayer);
+						player = newPlayer;
+
+						if (oldUrl) {
+							URL.revokeObjectURL(oldUrl);
+						}
+
+						// TODO: abort previous request; loading indicator
+						getFile(keySet, id).then(
+							fileBuffer => {
+								if (newPlayer !== player) {
+									return;
+								}
+
+								const fileBlob = new Blob([fileBuffer], {type: 'audio/ogg;codecs=opus'});
+								const fileUrl = URL.createObjectURL(fileBlob);
+								player.src = fileUrl;
+								player.play();
+							},
+							error => {
+								// TODO: remove loading indicator
+								console.error(error);
+							}
+						);
+					});
+				}
+
+				document.body.replaceChild(ui, keyForm);
+			},
+			error => {
+				keyInput.disabled = keySubmit.disabled = false;
+				console.error(error);
+			}
+		);
+	});
+
+	keySubmit.disabled = false;
+}
+</script>
