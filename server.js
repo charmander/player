@@ -167,6 +167,6 @@ const server = https.createServer({
 	minVersion: 'TLSv1.2',
 }, respond);
 
-server.listen(listenPort, listenHost, process.env.HOST, () => {
+server.listen(listenPort, listenHost, () => {
 	console.log('listening at', server.address());
 });
